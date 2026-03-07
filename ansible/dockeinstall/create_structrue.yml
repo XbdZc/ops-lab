@@ -1,0 +1,66 @@
+# create_structure.yml
+---
+- name: 创建 Playbook 目录结构
+  hosts: localhost
+  connection: local
+  tasks:
+    # 创建核心目录结构
+    - name: 创建基础目录
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: 0755
+      loop:
+        - playbook/roles/dns_config/tasks
+        - playbook/roles/dns_config/templates
+        - playbook/roles/docker_repo/tasks
+        - playbook/roles/docker_install/tasks
+        - playbook/roles/mirror_config/tasks
+        - playbook/roles/mirror_config/templates
+        - playbook/roles/completion/tasks
+        - playbook/vars
+
+    # 创建核心文件
+    - name: 初始化 YAML 文件
+      ansible.builtin.copy:
+        dest: "{{ item }}"
+        content: "# Ansible Managed File"
+        mode: 0644
+        force: no  # 避免覆盖已有文件
+      loop:
+        - playbook/roles/dns_config/tasks/main.yml
+        - playbook/roles/docker_repo/tasks/main.yml
+        - playbook/roles/docker_install/tasks/main.yml
+        - playbook/roles/mirror_config/tasks/main.yml
+        - playbook/roles/completion/tasks/main.yml
+        - playbook/vars/main.yml
+
+    # 创建模板文件
+    - name: 初始化模板文件
+      ansible.builtin.copy:
+        dest: "{{ item }}"
+        content: "# Template File"
+        mode: 0644
+        force: no
+      loop:
+        - playbook/roles/dns_config/templates/resolved.conf.j2
+        - playbook/roles/mirror_config/templates/daemon.json.j2
+
+    # 创建主 Playbook
+    - name: 创建 site.yml
+      ansible.builtin.copy:
+        dest: playbook/site.yml
+        content: |
+          # main playbook
+          ---
+          - name: 部署 Docker 环境
+            hosts: all
+            become: yes
+            roles:
+              - dns_config
+              - docker_repo
+              - docker_install
+              - mirror_config
+              - completion
+        mode: 0644
+

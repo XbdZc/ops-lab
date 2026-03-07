@@ -1,0 +1,12 @@
+
+- hosts: all
+  become: yes
+  vars_files:
+    - vars/main.yml    # 集中管理变量
+  roles:
+    - dns_config
+    - docker_repo
+    - role: docker_install    # 必须加上 "role:" 关键字
+      tags: only_install      # 缩进对齐
+    - mirror_config
+    - completion

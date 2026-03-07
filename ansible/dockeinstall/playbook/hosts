@@ -1,0 +1,4 @@
+host1 ansible_host=192.168.0.221 ansible_user=vagrant
+host2 ansible_host=192.168.0.222 ansible_user=vagrant
+host3 ansible_host=192.168.0.223 ansible_user=vagrant
+host4 ansible_connection=local ansible_user=vagrant

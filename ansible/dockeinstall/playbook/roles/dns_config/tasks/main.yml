@@ -1,0 +1,17 @@
+# roles/dns_config/tasks/main.yml
+- name: 配置 DNS（模板方式）
+  template:
+    src: resolved.conf.j2
+    dest: /etc/systemd/resolved.conf
+    owner: root
+    group: root
+    mode: 0644
+  notify: restart systemd-resolved    # 触发 Handler
+
+- name: 更新 resolv.conf 软链接
+  file:
+    src: /run/systemd/resolve/resolv.conf
+    dest: /etc/resolv.conf
+    state: link
+    force: yes
+  notify: restart systemd-resolved    # 触发 Handler

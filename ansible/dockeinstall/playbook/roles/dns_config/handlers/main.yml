@@ -1,0 +1,7 @@
+# roles/dns_config/handlers/main.yml
+- name: restart systemd-resolved
+  systemd:
+    name: systemd-resolved
+    state: restarted
+    enabled: yes
+    daemon_reload: yes

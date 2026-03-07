@@ -1,0 +1,21 @@
+# roles/docker_install/tasks/main.yml
+- name: 安装 Docker 核心组件
+  apt:
+    name: "{{ item }}"
+    state: present
+    update_cache: yes
+  loop:
+    - docker-ce
+    - docker-ce-cli
+    - containerd.io
+    - docker-buildx-plugin
+    - docker-compose-plugin
+
+- name: 将当前连接用户加入 docker 组
+  user:
+    name: "{{ ansible_user }}"  # 自动获取你 hosts 里配的 vagrant
+    groups: docker
+    append: yes
+
+- name: 刷新 SSH 连接以使组权限立即生效
+  meta: reset_connection

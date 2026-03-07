@@ -1,0 +1,7 @@
+# roles/mirror_config/handlers/main.yml
+- name: restart docker
+  systemd:
+    name: docker
+    state: restarted
+    enabled: yes    # 如果不需要设置开机自启，可省略此行
+    # daemon_reload: yes   # 仅在修改 systemd 服务文件时需要

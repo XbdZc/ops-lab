@@ -1,0 +1,18 @@
+# roles/completion/tasks/main.yml
+- name: 安装 bash-completion
+  apt:
+    name: bash-completion
+    state: present
+
+- name: 检查 docker 补全文件是否存在
+  ansible.builtin.stat:
+    path: /etc/bash_completion.d/docker
+  register: docker_completion_file
+
+- name: 下载 Docker 补全文件（如果不存在）
+  ansible.builtin.get_url:
+    url: "https://raw.githubusercontent.com/docker/cli/master/contrib/completion/bash/docker"
+    dest: /etc/bash_completion.d/docker
+    mode: 0644
+    timeout: 30
+  when: not docker_completion_file.stat.exists
