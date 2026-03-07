@@ -1,0 +1,24 @@
+common_packages:
+  - curl
+  - wget
+  - vim
+  - git
+  - htop
+  - net-tools
+  - dnsutils
+  - tree
+  - unzip
+  - tar
+  - jq
+  - bash-completion
+
+common_timezone: "Asia/Shanghai"
+
+common_manage_ssh: false
+ssh_permit_root_login: false
+ssh_password_authentication: false
+ssh_cloud_init_override: false
+
+common_manage_swap: false
+swap_file_path: /swapfile
+swap_file_size_mb: 1024

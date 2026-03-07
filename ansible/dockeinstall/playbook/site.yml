@@ -1,12 +1,48 @@
-
 - hosts: all
   become: yes
+  gather_facts: yes
   vars_files:
-    - vars/main.yml    # 集中管理变量
+    - vars/main.yml
+
   roles:
-    - dns_config
-    - docker_repo
-    - role: docker_install    # 必须加上 "role:" 关键字
-      tags: only_install      # 缩进对齐
-    - mirror_config
-    - completion
+    # 先替换系统 APT 源，后续 apt 安装都依赖它
+    - role: apt_source
+      tags:
+        - apt_source
+        - init
+
+    # 基础初始化（时区、常用工具、可选 SSH / Swap）
+    - role: common_init
+      tags:
+        - common_init
+        - init
+
+    # 添加 Docker 仓库
+    - role: docker_repo
+      tags:
+        - docker_repo
+        - docker
+
+    # 安装 Docker 核心组件
+    - role: docker_install
+      tags:
+        - docker_install
+        - docker
+
+    # 写入 /etc/docker/daemon.json，配置 registry mirror
+    - role: mirror_config
+      tags:
+        - docker_mirror
+        - docker
+
+    # 安装 bash-completion 与 docker completion
+    - role: completion
+      tags:
+        - completion
+        - docker
+
+    # DNS 配置放最后，避免前面下载/安装阶段被错误 DNS 影响
+    - role: dns_config
+      tags:
+        - dns_config
+        - init

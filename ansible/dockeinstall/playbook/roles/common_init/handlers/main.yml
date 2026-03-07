@@ -1,0 +1,4 @@
+- name: restart ssh
+  ansible.builtin.service:
+    name: "{{ 'ssh' if ansible_distribution == 'Ubuntu' else 'sshd' }}"
+    state: restarted

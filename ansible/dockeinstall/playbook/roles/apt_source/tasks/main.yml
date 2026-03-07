@@ -1,0 +1,58 @@
+- name: 校验系统类型
+  ansible.builtin.assert:
+    that:
+      - ansible_os_family == "Debian"
+    fail_msg: "apt_source role 仅支持 Debian/Ubuntu"
+
+- name: 校验镜像源名称
+  ansible.builtin.assert:
+    that:
+      - apt_source_name in apt_mirrors
+    fail_msg: "不支持的 apt_source_name: {{ apt_source_name }}"
+
+- name: 确保 apt 基础依赖存在
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - apt-transport-https
+    state: present
+    update_cache: yes
+
+- name: 渲染 Ubuntu sources.list
+  ansible.builtin.template:
+    src: sources.list.ubuntu.j2
+    dest: /etc/apt/sources.list
+    owner: root
+    group: root
+    mode: "0644"
+    backup: yes
+  when: ansible_distribution == "Ubuntu"
+
+- name: 渲染 Debian sources.list
+  ansible.builtin.template:
+    src: sources.list.debian.j2
+    dest: /etc/apt/sources.list
+    owner: root
+    group: root
+    mode: "0644"
+    backup: yes
+  when: ansible_distribution == "Debian"
+
+- name: 查找额外源文件
+  ansible.builtin.find:
+    paths: /etc/apt/sources.list.d
+    file_type: file
+  register: apt_extra_sources
+  when: apt_remove_extra_sources | bool
+
+- name: 删除额外源文件
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ apt_extra_sources.files }}"
+  when: apt_remove_extra_sources | bool
+
+- name: 更新 APT 缓存
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 0

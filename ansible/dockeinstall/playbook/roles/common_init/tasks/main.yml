@@ -1,0 +1,119 @@
+- name: 更新 apt 缓存
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+  when: ansible_os_family == "Debian"
+
+- name: 升级系统软件包
+  ansible.builtin.apt:
+    upgrade: dist
+  when: ansible_os_family == "Debian"
+
+- name: 安装常用工具
+  ansible.builtin.apt:
+    name: "{{ common_packages }}"
+    state: present
+  when: ansible_os_family == "Debian"
+
+- name: 获取当前时区
+  ansible.builtin.command: timedatectl show --property=Timezone --value
+  register: current_timezone
+  changed_when: false
+
+- name: 设置时区
+  ansible.builtin.command: "timedatectl set-timezone {{ common_timezone }}"
+  when: current_timezone.stdout != common_timezone
+
+- name: 配置 SSH PermitRootLogin
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PermitRootLogin'
+    line: "PermitRootLogin {{ 'yes' if ssh_permit_root_login else 'no' }}"
+    create: yes
+    backup: yes
+  when: common_manage_ssh | bool
+  notify: restart ssh
+
+- name: 配置 SSH PasswordAuthentication
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PasswordAuthentication'
+    line: "PasswordAuthentication {{ 'yes' if ssh_password_authentication else 'no' }}"
+    create: yes
+    backup: yes
+  when: common_manage_ssh | bool
+  notify: restart ssh
+
+- name: 检查 sshd_config.d 目录
+  ansible.builtin.stat:
+    path: /etc/ssh/sshd_config.d
+  register: sshd_config_d
+  when: common_manage_ssh | bool
+
+- name: 覆盖 cloud-init SSH 配置
+  ansible.builtin.copy:
+    dest: /etc/ssh/sshd_config.d/50-cloud-init.conf
+    content: |
+      PasswordAuthentication {{ 'yes' if ssh_password_authentication else 'no' }}
+    owner: root
+    group: root
+    mode: "0644"
+  when:
+    - common_manage_ssh | bool
+    - ssh_cloud_init_override | bool
+    - sshd_config_d.stat.exists
+    - ansible_distribution == "Ubuntu"
+  notify: restart ssh
+
+- name: 检查 swap 文件
+  ansible.builtin.stat:
+    path: "{{ swap_file_path }}"
+  register: swapfile_stat
+  when: common_manage_swap | bool
+
+- name: 使用 fallocate 创建 swap 文件
+  ansible.builtin.command: "fallocate -l {{ swap_file_size_mb }}M {{ swap_file_path }}"
+  register: swap_create
+  changed_when: swap_create.rc == 0
+  failed_when: false
+  when:
+    - common_manage_swap | bool
+    - not swapfile_stat.stat.exists
+
+- name: fallocate 失败时改用 dd 创建 swap 文件
+  ansible.builtin.command: "dd if=/dev/zero of={{ swap_file_path }} bs=1M count={{ swap_file_size_mb }}"
+  when:
+    - common_manage_swap | bool
+    - not swapfile_stat.stat.exists
+    - swap_create is defined
+    - swap_create.rc != 0
+
+- name: 设置 swap 文件权限
+  ansible.builtin.file:
+    path: "{{ swap_file_path }}"
+    owner: root
+    group: root
+    mode: "0600"
+    state: file
+  when:
+    - common_manage_swap | bool
+    - not swapfile_stat.stat.exists
+
+- name: 格式化 swap
+  ansible.builtin.command: "mkswap {{ swap_file_path }}"
+  when:
+    - common_manage_swap | bool
+    - not swapfile_stat.stat.exists
+
+- name: 启用 swap
+  ansible.builtin.command: "swapon {{ swap_file_path }}"
+  when:
+    - common_manage_swap | bool
+    - not swapfile_stat.stat.exists
+
+- name: 持久化 swap 到 fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    line: "{{ swap_file_path }} none swap sw 0 0"
+    state: present
+  when: common_manage_swap | bool

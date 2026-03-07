@@ -1,0 +1,39 @@
+# 默认 APT 镜像源
+apt_source_name: aliyun
+
+# 是否同时写入 deb-src 源
+apt_with_src: false
+
+# 是否删除 /etc/apt/sources.list.d/ 下的额外源文件
+# Ubuntu 24.04 建议开启 true，以避免系统继续使用 ubuntu.sources 中的官方源
+apt_remove_extra_sources: false
+apt_mirrors:
+  huawei:
+    debian_base: "http://repo.huaweicloud.com/debian"
+    debian_security: "http://repo.huaweicloud.com/debian-security"
+    ubuntu_base: "http://repo.huaweicloud.com/ubuntu"
+    ubuntu_security: "http://repo.huaweicloud.com/ubuntu"
+
+  aliyun:
+    debian_base: "http://mirrors.aliyun.com/debian"
+    debian_security: "http://mirrors.aliyun.com/debian-security"
+    ubuntu_base: "http://mirrors.aliyun.com/ubuntu"
+    ubuntu_security: "http://mirrors.aliyun.com/ubuntu"
+
+  tsinghua:
+    debian_base: "https://mirrors.tuna.tsinghua.edu.cn/debian"
+    debian_security: "https://mirrors.tuna.tsinghua.edu.cn/debian-security"
+    ubuntu_base: "https://mirrors.tuna.tsinghua.edu.cn/ubuntu"
+    ubuntu_security: "https://mirrors.tuna.tsinghua.edu.cn/ubuntu"
+
+  ustc:
+    debian_base: "https://mirrors.ustc.edu.cn/debian"
+    debian_security: "https://mirrors.ustc.edu.cn/debian-security"
+    ubuntu_base: "https://mirrors.ustc.edu.cn/ubuntu"
+    ubuntu_security: "https://mirrors.ustc.edu.cn/ubuntu"
+
+  official:
+    debian_base: "http://deb.debian.org/debian"
+    debian_security: "http://security.debian.org/debian-security"
+    ubuntu_base: "http://archive.ubuntu.com/ubuntu"
+    ubuntu_security: "http://security.ubuntu.com/ubuntu"

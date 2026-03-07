@@ -1,15 +1,15 @@
 # roles/mirror_config/tasks/main.yml
 - name: 创建 Docker 配置目录
-  file:
+  ansible.builtin.file:
     path: /etc/docker
     state: directory
-    mode: 0755
+    mode: "0755"
 
 - name: 配置镜像加速
-  template:
-    src: daemon.json.j2      # 模板路径：roles/mirror_config/templates/
+  ansible.builtin.template:
+    src: daemon.json.j2
     dest: /etc/docker/daemon.json
     owner: root
     group: root
-    mode: 0644
+    mode: "0644"
   notify: restart docker

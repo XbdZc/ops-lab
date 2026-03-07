@@ -1,19 +1,86 @@
 # vars/main.yml
+
+# =========================
+# DNS 配置
+# =========================
+# 仅在 manage_dns_config: true 时生效
+# DNS 为 systemd-resolved 的全局 DNS 配置
 dns_servers:
   - 8.8.8.8
   - 114.114.114.114
+
+# 备用 DNS
 fallback_dns: 1.1.1.1
+
+# =========================
+# APT 源配置
+# =========================
+# 可选值:
+#   aliyun / huawei / tsinghua / ustc / official
+apt_source_name: aliyun
+
+# 是否同时写入 deb-src 源
+# 默认 false 即可，适合绝大多数“安装软件”场景
+# 只有在以下场景建议开启：
+# 1. 需要 apt source <pkg> 拉取源码包
+# 2. 需要 apt build-dep <pkg> 安装构建依赖
+# 3. 需要在目标机上编译/打包 Debian/Ubuntu 软件
+# 普通 Docker 安装、日常软件安装不需要开启
+apt_with_src: false
+
+# 是否删除 /etc/apt/sources.list.d/ 下额外源文件
+# Ubuntu 24.04 建议开启 true，否则系统可能继续使用 ubuntu.sources 中的官方源
+# 如果目标机器上还依赖其他第三方仓库（例如公司内网源、NVIDIA、K8s、HashiCorp 等），请谨慎开启
+apt_remove_extra_sources: false
+
+# =========================
+# 基础初始化配置
+# =========================
+# 设置系统时区
+common_timezone: Asia/Shanghai
+
+# =========================
+# SSH 配置
+# =========================
+# 是否由 playbook 管理 SSH 配置
+# 建议默认 false，公网机器请谨慎开启
+common_manage_ssh: false
+
+# 是否允许 root 登录
+# 仅在 common_manage_ssh: true 时生效
+ssh_permit_root_login: false
+
+# 是否开启密码认证
+# 仅在 common_manage_ssh: true 时生效
+ssh_password_authentication: false
+
+# 是否覆盖 cloud-init 下发的 SSH 配置
+# Ubuntu 云主机常见；如果系统没有 cloud-init 或不希望覆盖，保持 false
+ssh_cloud_init_override: false
+
+# =========================
+# Swap 配置
+# =========================
+# 是否创建 /swapfile
+# 建议默认 false；如机器内存较小、Docker 构建或安装过程容易 OOM，可开启
+common_manage_swap: false
+
+# swap 文件大小（MB）
+swap_file_size_mb: 1024
+
+# =========================
+# DNS 管理开关
+# =========================
+# 是否管理 /etc/systemd/resolved.conf 和 /etc/resolv.conf
+# 建议默认 false，避免影响现有网络环境
+manage_dns_config: false
+
+# =========================
+# Docker registry mirror 配置
+# =========================
 registry_mirrors:
   - "https://docker.1ms.run"
-  - "https://docker.mybacc.com"
-  - "https://dytt.online"
-  - "https://lispy.org"
-  - "https://docker.xiaogenban1993.com"
-  - "https://docker.yomansunter.com"
-  - "https://aicarbon.xyz"
-  - "https://666860.xyz"
-  - "https://docker.zhai.cm"
-  - "https://a.ussh.net"
-  - "https://hub.littlediary.cn"
-  - "https://hub.rat.dev"
+  - "https://docker.1panel.live"
+  - "https://dockerproxy.net"
+  - "https://proxy.vvvv.ee"
   - "https://docker.m.daocloud.io"
