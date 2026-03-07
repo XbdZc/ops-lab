@@ -1,0 +1,31 @@
+groups:
+- name: host-alerts
+  rules:
+  - alert: HighCpuUsage
+    expr: 100 - (avg by(instance)(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 85
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "实例 {{ $labels.instance }} CPU 使用率过高"
+      description: "CPU 使用率持续5分钟超过85%，当前值为 {{ $value }}%"
+
+  - alert: LowMemoryAvailable
+    expr: (node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes * 100) < 10
+    for: 10m
+    labels:
+      severity: warning
+    annotations:
+      summary: "实例 {{ $labels.instance }} 可用内存不足"
+      description: "可用内存低于10%，当前剩余 {{ $value | humanize }}%"
+
+- name: mysql-alerts
+  rules:
+  - alert: MysqlDown
+    expr: mysql_up == 0
+    for: 1m
+    labels:
+      severity: critical
+    annotations:
+      summary: "MySQL 服务不可用"
+      description: "MySQL 实例 {{ $labels.instance }} 已宕机超过1分钟"

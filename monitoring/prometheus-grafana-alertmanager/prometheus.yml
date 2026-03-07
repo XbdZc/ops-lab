@@ -1,0 +1,38 @@
+global:                 # 全局采集参数
+  scrape_interval: 15s  # 抓取间隔
+  evaluation_interval: 15s # 告警规则评估间隔
+
+# 告警规则加载
+rule_files:             # 告警规则文件路径
+  - "/etc/prometheus/alert_rules.yml"
+
+# 抓取目标配置
+scrape_configs:         # 监控目标定义
+  - job_name: "node"    # 监控组名称 
+    static_configs:
+      - targets: ["node-exporter:9100"]  # 监控本机node-exporter
+  - job_name: "docker"
+    static_configs:
+      - targets: ["cadvisor:8080"]       # 监控容器
+  # 示例：添加其他主机监控（需对应主机部署node-exporter）
+  - job_name: "host1-node" # 监控其他主机示例
+    static_configs:
+      - targets: ["192.168.0.221:9100"] # 修改为host1的实际IP（需确保host1的node_exporter已运行）
+  # 监控 MySQL Exporter
+  - job_name: "mysql"                   # MySQL监控示例（需先部署mysqld_exporter）
+    scrape_interval: 30s  # 降低抓取频率（根据负载调整）
+    static_configs:
+      - targets: ["192.168.0.221:9104"]
+    params:
+      collect[]:  # 指定需要收集的指标组（减少冗余数据）
+        - standard
+        - engine_innodb  # 监控 MySQL Exporter
+  - job_name: "tomcat"
+    static_configs:
+      - targets: ["192.168.0.221:9404"]
+    tls_config:
+      insecure_skip_verify: true         # 跳过证书验证（生产环境建议配置CA）
+alerting:
+  alertmanagers:
+  - static_configs:
+    - targets: ['alertmanager:9093']  # Alertmanager 服务地址

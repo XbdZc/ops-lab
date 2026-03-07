@@ -1,0 +1,177 @@
+services:
+  # Prometheus核心服务
+  prometheus:
+    image: prom/prometheus:v3.4.0
+    container_name: prometheus
+    restart: unless-stopped
+    networks:
+      - monitor-net
+    ports:
+      - "9090:9090"
+    volumes:
+      - prometheus_data:/prometheus                # 时序数据库持久化存储
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro  # 主配置文件注入
+      - ./alert_rules.yml:/etc/prometheus/alert_rules.yml:ro # 告警规则注入
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=30d          # 数据保留30天
+      - --web.enable-lifecycle                     # 启用配置热加载
+      - --web.external-url=/prometheus/
+      - --web.route-prefix=/prometheus/
+    environment:
+      - TZ=Asia/Shanghai                           # 时区设置
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 2G
+
+  # Grafana可视化
+  grafana:
+    image: grafana/grafana:10.1.5
+    container_name: grafana
+    restart: unless-stopped
+    networks:
+      - monitor-net
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana              # 配置/仪表盘持久化
+      - ./grafana-provisioning:/etc/grafana/provisioning # 预配置仪表盘
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=L1L7WxZ443iyZd  #必须修改为复杂密码
+#      - GF_SERVER_DOMAIN=monitor.yourcompany.com   # 生产域名,若没有域名可注释或删除此行
+      - GF_SERVER_ROOT_URL=https://monitor.host4/grafana/
+      - GF_SERVER_SERVE_FROM_SUB_PATH=true        # 强制使用IP访问（可选）
+      - GF_SERVER_ENABLE_GZIP=true
+      - GF_USERS_ALLOW_SIGN_UP=false               # 禁用公开注册
+      - GF_AUTH_DISABLE_LOGIN_FORM=false            # SSO登录,需正确配置代理认证（需后端支持）
+      - GF_AUTH_PROXY_ENABLED=false                 #代理认证
+#      - GF_AUTH_PROXY_HEADER_NAME=X-WEBAUTH-USER   #代理认证
+      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=false
+      - GF_DATABASE_TYPE=postgres
+      - GF_DATABASE_HOST=postgres
+      - GF_DATABASE_USER=grafana
+      - GF_DATABASE_PASSWORD=L1L7WxZ443iyZd
+      - GF_LIVE_ENABLED=false
+      - GF_PLUGINS_DISABLE_AUTOLOAD=true  # 禁用插件自动加载
+#      - GF_PATHS_PLUGINS=/var/lib/grafana/plugins  # 显式指定插件路径
+#      - GF_DEFAULT_PLUGINS_PATH=/dev/null          # 禁用默认插件路径
+    depends_on:
+      postgres:
+        condition: service_healthy  # 等待 PostgreSQL 健康检查通过
+      prometheus:
+        condition: service_started  # 确保 Prometheus 已启动
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+
+  # Node Exporter示例 (按需部署到各主机)
+  node-exporter:
+    image: prom/node-exporter:v1.9.1
+    container_name: node-exporter
+    restart: unless-stopped
+    networks:
+      - monitor-net
+    ports:
+      - "9100:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /run/udev:/run/udev:ro #获取磁盘设备信息
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 256M
+
+  # 容器监控(可选)
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.52.1
+#    image: google/cadvisor:v0.33.0
+    user: "0:996"  # root 用户 + docker 组 GID
+    container_name: cadvisor
+    restart: unless-stopped
+    networks:
+      - monitor-net
+    ports:
+      - "8080:8080"
+    volumes:
+      - /:/rootfs:ro,rslave                       # 只读挂载防止篡改
+      - /var/run:/var/run:ro,rslave
+      - /sys:/sys:ro,rslave
+      - /var/lib/docker:/var/lib/docker:ro,rslave #解决日志中 Failed to get system UUID 警告
+      - /etc/machine-id:/etc/machine-id:ro  #挂载 /dev/disk：更精确的磁盘监控
+      - /dev/disk:/dev/disk:ro
+    privileged: true                               # 必须权限
+#    command:
+#      - --docker_only=true  #仅监控 Docker 容器（隐式禁用 CRI-O/Podman 检测）
+#      - --disable_metrics=hugetlb,advtcp,udp  # 可选:禁用不常用指标（减少日志干扰）
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 1G
+
+  postgres:
+    image: postgres:15
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U grafana -d grafana || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - monitor-net
+    environment:
+      POSTGRES_USER: grafana
+      POSTGRES_PASSWORD: L1L7WxZ443iyZd
+      POSTGRES_DB: grafana
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256  # 启用加密认证
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256 --auth-local=scram-sha-256" #安全加固
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  alertmanager:
+#    profiles:
+#      - alertmanager
+    image: prom/alertmanager:v0.28.1
+    container_name: alertmanager
+    restart: unless-stopped
+    networks:
+      - monitor-net
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+#      - --cluster.advertise-address=alertmanager:9093
+    depends_on:
+      - prometheus
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 512M
+
+# 自定义网络隔离监控系统流量
+networks:
+  monitor-net:
+    driver: bridge
+    attachable: true
+
+volumes:
+  prometheus_data: {}  # Prometheus时序数据持久化
+  grafana_data: {}     # Grafana配置/仪表盘数据持久化
+  postgres_data: {}

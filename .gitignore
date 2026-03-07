@@ -1,0 +1,16 @@
+# secrets
+*.pem
+*.key
+.env
+
+# logs
+*.log
+
+# runtime data
+prometheus_data/
+grafana_data/
+postgres_data/
+
+# os
+.DS_Store
+Thumbs.db
