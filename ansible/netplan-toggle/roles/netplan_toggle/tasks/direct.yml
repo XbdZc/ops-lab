@@ -1,0 +1,155 @@
+---
+- name: direct | ensure drop-in dir exists (eth0)
+  ansible.builtin.file:
+    path: "{{ netplan_toggle__eth0_dropin_dir }}"
+    state: directory
+    mode: "0755"
+  notify: "netplan apply"
+
+- name: direct | install networkd drop-in to stop DHCPv4 injecting gw/dns/routes on eth0
+  ansible.builtin.template:
+    src: dhcpv4-no-routes.conf.j2
+    dest: "{{ netplan_toggle__eth0_dropin_file }}"
+    mode: "0644"
+  notify: "netplan apply"
+
+- name: direct | install netplan custom (eth1 default route + DNS)
+  ansible.builtin.template:
+    src: netplan-toggle.yaml.j2
+    dest: "{{ netplan_toggle_custom_netplan_file }}"
+    mode: "0644"
+  notify: "netplan apply"
+
+- name: direct | apply now
+  ansible.builtin.meta: flush_handlers
+
+- name: direct | check IPv4 default routes on eth0
+  ansible.builtin.command: ip -4 route show default dev {{ netplan_toggle_eth0_if }}
+  register: _eth0_default_routes
+  changed_when: false
+  failed_when: false
+
+- name: direct | delete stale IPv4 default route(s) on eth0
+  ansible.builtin.shell: |
+    set -euo pipefail
+    for i in $(seq 1 10); do
+      if ip -4 route show default dev {{ netplan_toggle_eth0_if }} | grep -q .; then
+        ip -4 route del default dev {{ netplan_toggle_eth0_if }} 2>/dev/null || true
+      else
+        break
+      fi
+    done
+    ip -4 route flush cache 2>/dev/null || true
+  args:
+    executable: /bin/bash
+  when:
+    - not ansible_check_mode
+    - (_eth0_default_routes.stdout | trim) != ""
+  changed_when: true
+
+# ---- appended: remove eth1 no-default-gw drop-in when switching back to direct mode ----
+- name: direct | detect eth1 Network File path
+  ansible.builtin.shell: |
+    set -e
+    IF="{{ netplan_toggle_eth1_if | default('eth1') }}"
+    networkctl status "${IF}" --no-pager | awk -F': ' '/Network File:/ {print $2; exit}'
+  register: _eth1_netfile
+  changed_when: false
+
+- name: direct | remove eth1 no-default-gw drop-in (if exists)
+  ansible.builtin.file:
+    path: "{{ _eth1_netfile.stdout | trim }}.d/10-netplan_toggle-no-default-gw.conf"
+    state: absent
+  when: (_eth1_netfile.stdout | default('') | trim) != ""
+
+- name: direct | reconfigure eth1 after removing drop-in (ignore errors)
+  ansible.builtin.command: "networkctl reconfigure {{ netplan_toggle_eth1_if | default('eth1') }}"
+  changed_when: false
+  failed_when: false
+
+# ---- appended: persist routing mode across reboot (systemd oneshot) ----
+- name: persist | ensure state dir
+  ansible.builtin.file:
+    path: /etc/netplan_toggle
+    state: directory
+    mode: "0755"
+
+- name: persist | install enforce script
+  ansible.builtin.copy:
+    dest: /usr/local/sbin/netplan-toggle-enforce.sh
+    mode: "0755"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+
+      MODE_FILE=/etc/netplan_toggle/mode
+      MODE="direct"
+      if [[ -f "$MODE_FILE" ]]; then
+        MODE="$(tr -d ' \t\r\n' < "$MODE_FILE" || true)"
+      fi
+
+      ETH0="{{ netplan_toggle_eth0_if }}"
+      ETH1="{{ netplan_toggle_eth1_if | default('eth1') }}"
+
+      if [[ "$MODE" == "clash" ]]; then
+        while ip -4 route del default dev "$ETH1" 2>/dev/null; do :; done
+
+        gw=""
+        for i in {1..30}; do
+          if [[ -e "/sys/class/net/${ETH0}/ifindex" ]]; then
+            idx="$(cat /sys/class/net/${ETH0}/ifindex || true)"
+            lease="/run/systemd/netif/leases/${idx}"
+            if [[ -f "$lease" ]]; then
+              gw="$(awk -F= '$1=="ROUTER"{print $2; exit}' "$lease" || true)"
+              [[ -n "$gw" ]] && break
+            fi
+          fi
+          sleep 1
+        done
+
+        if [[ -n "$gw" ]]; then
+          ip -4 route replace default via "$gw" dev "$ETH0" metric 10
+        fi
+
+        while ip -4 route del default dev "$ETH1" 2>/dev/null; do :; done
+        ip -4 route flush cache || true
+      else
+        while ip -4 route del default dev "$ETH0" 2>/dev/null; do :; done
+        ip -4 route flush cache || true
+      fi
+
+- name: persist | install systemd service
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/netplan-toggle-enforce.service
+    mode: "0644"
+    content: |
+      [Unit]
+      Description=Netplan toggle enforce default route (direct/clash)
+      After=systemd-networkd.service network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/netplan-toggle-enforce.sh
+      RemainAfterExit=yes
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: persist | set mode file (direct)
+  ansible.builtin.copy:
+    dest: /etc/netplan_toggle/mode
+    mode: "0644"
+    content: "direct\n"
+
+- name: persist | daemon-reload
+  ansible.builtin.command: systemctl daemon-reload
+  changed_when: false
+
+- name: persist | enable service
+  ansible.builtin.command: systemctl enable netplan-toggle-enforce.service
+  changed_when: false
+
+- name: persist | run enforce once now
+  ansible.builtin.command: systemctl start netplan-toggle-enforce.service
+  changed_when: false

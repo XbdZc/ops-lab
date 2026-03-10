@@ -1,0 +1,35 @@
+---
+# direct 或 clash
+netplan_toggle_mode: "clash"
+
+# 接口名（按需在 host_vars 里覆盖）
+netplan_toggle_eth0_if: "eth0"
+netplan_toggle_eth1_if: "eth1"
+
+# 可选：如果你已知 eth0 的 .network 文件名，可直接指定，跳过自动探测
+# 示例："10-netplan-eth0.network"
+netplan_toggle_eth0_network_file: ""
+
+# direct 模式：eth1 作为默认出口的网关/DNS/metric
+netplan_toggle_eth1_gw4: "192.168.0.1"
+netplan_toggle_eth1_metric: 50
+netplan_toggle_eth1_dns4:
+  - "192.168.0.1"
+  - "114.114.114.114"
+
+# 可选：是否在自定义 netplan 里显式设置 eth1 的 dhcp4（null 表示不碰）
+netplan_toggle_eth1_dhcp4: null
+
+# role 管理的文件
+netplan_toggle_custom_netplan_file: "/etc/netplan/99-netplan-toggle.yaml"
+netplan_toggle_dropin_name: "99-netplan-toggle.conf"
+
+# 切换后校验（建议保留）
+netplan_toggle_verify: true
+netplan_toggle_assert_single_default: true
+netplan_toggle_verify_probe_ip: "1.1.1.1"
+netplan_toggle_verify_retries: 15
+netplan_toggle_verify_delay: 1
+
+# check mode 下默认不做 verify（避免“没真正 apply 但 verify 失败”）
+netplan_toggle_verify_in_check_mode: false

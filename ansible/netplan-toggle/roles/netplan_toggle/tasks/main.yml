@@ -1,0 +1,25 @@
+---
+- name: Precheck
+  ansible.builtin.import_tasks: precheck.yml
+  tags: [netplan_toggle, precheck]
+
+- name: Detect eth0 network file (systemd-networkd)
+  ansible.builtin.import_tasks: detect.yml
+  tags: [netplan_toggle, detect]
+
+- name: Apply direct mode
+  ansible.builtin.import_tasks: direct.yml
+  when: netplan_toggle_mode == "direct"
+  tags: [netplan_toggle, direct]
+
+- name: Apply clash mode
+  ansible.builtin.import_tasks: clash.yml
+  when: netplan_toggle_mode == "clash"
+  tags: [netplan_toggle, clash]
+
+- name: Verify
+  ansible.builtin.import_tasks: verify.yml
+  when:
+    - netplan_toggle_verify | bool
+    - netplan_toggle_verify_in_check_mode | bool or (not ansible_check_mode)
+  tags: [netplan_toggle, verify]

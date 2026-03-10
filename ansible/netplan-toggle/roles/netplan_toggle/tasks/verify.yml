@@ -1,0 +1,45 @@
+---
+- name: verify | expected default dev
+  ansible.builtin.set_fact:
+    netplan_toggle__expected_dev: "{{ (netplan_toggle_mode == 'direct') | ternary(netplan_toggle_eth1_if, netplan_toggle_eth0_if) }}"
+
+- name: verify | wait for expected IPv4 default route
+  ansible.builtin.command: ip -4 route show default
+  register: _default_routes
+  changed_when: false
+  retries: "{{ netplan_toggle_verify_retries }}"
+  delay: "{{ netplan_toggle_verify_delay }}"
+  until: >-
+    (
+      _default_routes.stdout_lines | select('match', '^default') | list
+      | select('search', 'dev ' ~ netplan_toggle__expected_dev) | list
+      | length
+    ) > 0
+    and
+    (
+      (not netplan_toggle_assert_single_default) or
+      ((_default_routes.stdout_lines | select('match', '^default') | list | length) == 1)
+    )
+
+- name: verify | collect default route lines
+  ansible.builtin.set_fact:
+    netplan_toggle__default_lines: "{{ _default_routes.stdout_lines | select('match', '^default') | list }}"
+
+- name: verify | assert default route matches expected dev
+  ansible.builtin.assert:
+    that:
+      - (not netplan_toggle_assert_single_default) or (netplan_toggle__default_lines | length == 1)
+      - (netplan_toggle__default_lines | select('search', 'dev ' ~ netplan_toggle__expected_dev) | list | length) >= 1
+    fail_msg: |
+      IPv4 default route not as expected.
+      mode={{ netplan_toggle_mode }}, expected dev={{ netplan_toggle__expected_dev }}
+      got:
+      {{ netplan_toggle__default_lines | join('\n') }}
+
+- name: verify | wait probe route uses expected dev
+  ansible.builtin.command: ip -4 route get {{ netplan_toggle_verify_probe_ip }}
+  register: _route_get
+  changed_when: false
+  retries: "{{ netplan_toggle_verify_retries }}"
+  delay: "{{ netplan_toggle_verify_delay }}"
+  until: "'dev {{ netplan_toggle__expected_dev }}' in _route_get.stdout"

@@ -1,0 +1,8 @@
+---
+netplan_toggle_eth0_if: "eth0"
+netplan_toggle_eth1_if: "eth1"
+
+netplan_toggle_eth1_gw4: "192.168.0.1"
+netplan_toggle_eth1_dns4:
+  - "192.168.0.1"
+  - "114.114.114.114"

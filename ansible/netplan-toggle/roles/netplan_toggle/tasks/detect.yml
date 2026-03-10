@@ -1,0 +1,65 @@
+---
+- name: Use user-supplied eth0 network file if provided
+  ansible.builtin.set_fact:
+    netplan_toggle__eth0_network_file: "{{ netplan_toggle_eth0_network_file | basename }}"
+  when: (netplan_toggle_eth0_network_file | default('') | trim) != ""
+
+- name: Read networkctl status for eth0
+  ansible.builtin.command: networkctl status {{ netplan_toggle_eth0_if }} --no-pager
+  register: _networkctl_status
+  changed_when: false
+  environment:
+    LANG: C
+    LC_ALL: C
+  when: netplan_toggle__eth0_network_file is not defined
+
+- name: Pick eth0 Network File line from networkctl output (no multiline regex)
+  ansible.builtin.set_fact:
+    netplan_toggle__eth0_network_file_line: >-
+      {{
+        (_networkctl_status.stdout_lines
+          | select('search', 'Network File:')
+          | list
+          | first
+          | default('')
+        )
+      }}
+  when: netplan_toggle__eth0_network_file is not defined
+
+- name: Derive eth0 Network File path from line
+  ansible.builtin.set_fact:
+    netplan_toggle__eth0_network_file_path: >-
+      {{
+        (netplan_toggle__eth0_network_file_line
+          | regex_replace('^.*Network\\s+File:\\s*', '')
+          | trim
+        )
+      }}
+  when: netplan_toggle__eth0_network_file is not defined
+
+- name: Set eth0 network file name
+  ansible.builtin.set_fact:
+    netplan_toggle__eth0_network_file: "{{ netplan_toggle__eth0_network_file_path | basename }}"
+  when: netplan_toggle__eth0_network_file is not defined
+
+- name: Debug detection (optional)
+  ansible.builtin.debug:
+    msg:
+      iface: "{{ netplan_toggle_eth0_if }}"
+      network_file_line: "{{ netplan_toggle__eth0_network_file_line | default('') }}"
+      parsed_path: "{{ netplan_toggle__eth0_network_file_path | default('') }}"
+      parsed_file: "{{ netplan_toggle__eth0_network_file | default('') }}"
+  when: (netplan_toggle_debug | default(false)) | bool
+
+- name: Fail if cannot detect eth0 Network File
+  ansible.builtin.fail:
+    msg: |
+      Cannot detect "Network File" for {{ netplan_toggle_eth0_if }}.
+      networkctl output:
+      {{ _networkctl_status.stdout | default('') }}
+  when: (netplan_toggle__eth0_network_file | default('') | trim) in ["", "n/a", "N/A", "-", "unknown"]
+
+- name: Derive drop-in paths for eth0
+  ansible.builtin.set_fact:
+    netplan_toggle__eth0_dropin_dir: "/etc/systemd/network/{{ netplan_toggle__eth0_network_file }}.d"
+    netplan_toggle__eth0_dropin_file: "/etc/systemd/network/{{ netplan_toggle__eth0_network_file }}.d/{{ netplan_toggle_dropin_name }}"

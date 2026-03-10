@@ -1,0 +1,7 @@
+---
+- name: Toggle IPv4 routing mode (direct/clash)
+  hosts: all
+  become: true
+  serial: 1
+  roles:
+    - role: netplan_toggle

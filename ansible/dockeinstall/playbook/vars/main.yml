@@ -17,7 +17,7 @@ fallback_dns: 1.1.1.1
 # =========================
 # 可选值:
 #   aliyun / huawei / tsinghua / ustc / official
-apt_source_name: aliyun
+apt_source_name: huawei
 
 # 是否同时写入 deb-src 源
 # 默认 false 即可，适合绝大多数“安装软件”场景

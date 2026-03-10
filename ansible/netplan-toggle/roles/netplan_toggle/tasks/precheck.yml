@@ -1,0 +1,46 @@
+---
+- name: Validate netplan_toggle_mode
+  ansible.builtin.assert:
+    that:
+      - netplan_toggle_mode in ["direct", "clash"]
+    fail_msg: "netplan_toggle_mode must be 'direct' or 'clash'"
+
+- name: direct | validate required vars
+  ansible.builtin.assert:
+    that:
+      - (netplan_toggle_eth1_gw4 | default('') | trim) != ""
+      - (netplan_toggle_eth1_dns4 | default([])) | length > 0
+    fail_msg: "direct mode requires netplan_toggle_eth1_gw4 and netplan_toggle_eth1_dns4"
+  when: netplan_toggle_mode == "direct"
+
+# netplan CLI 没有 --version；用 --help/info 做“存在性+可执行”检测
+- name: Check netplan CLI works
+  ansible.builtin.command: netplan --help
+  register: _netplan_help
+  changed_when: false
+
+# 如果你想拿版本号，从 dpkg 的 netplan.io 包获取（不作为硬失败条件）
+- name: Get netplan.io package version (optional)
+  ansible.builtin.command: dpkg-query -W -f='${Version}\n' netplan.io
+  register: _netplan_pkg_ver
+  changed_when: false
+  failed_when: false
+
+- name: Check networkctl exists
+  ansible.builtin.command: networkctl --version
+  register: _networkctl_version
+  changed_when: false
+
+- name: Ensure systemd-networkd is active (required for drop-in)
+  ansible.builtin.command: systemctl is-active systemd-networkd
+  register: _networkd_active
+  changed_when: false
+  failed_when: (_networkd_active.stdout | trim) != "active"
+
+- name: Ensure interfaces exist
+  ansible.builtin.command: ip link show dev {{ item }}
+  loop:
+    - "{{ netplan_toggle_eth0_if }}"
+    - "{{ netplan_toggle_eth1_if }}"
+  register: _ip_link
+  changed_when: false

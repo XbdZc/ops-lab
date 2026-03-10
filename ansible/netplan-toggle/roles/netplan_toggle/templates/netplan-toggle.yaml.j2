@@ -1,0 +1,17 @@
+# Managed by Ansible role: netplan_toggle
+network:
+  version: 2
+  ethernets:
+    {{ netplan_toggle_eth1_if }}:
+{% if netplan_toggle_eth1_dhcp4 is not none %}
+      dhcp4: {{ (netplan_toggle_eth1_dhcp4 | bool) | ternary('true','false') }}
+{% endif %}
+      routes:
+        - to: default
+          via: {{ netplan_toggle_eth1_gw4 }}
+          metric: {{ netplan_toggle_eth1_metric }}
+      nameservers:
+        addresses:
+{% for ip in netplan_toggle_eth1_dns4 %}
+          - {{ ip }}
+{% endfor %}

@@ -1,0 +1,134 @@
+---
+- name: Toggle direct vs clash mode (IPv4 only)
+  hosts: all
+  become: true
+  vars:
+    netplan_mode: "direct"         # direct 或 clash
+    eth0_if: "eth0"
+    eth1_if: "eth1"
+
+    # direct 模式下 eth1 的默认网关 & DNS
+    eth1_gw4: "192.168.0.1"
+    eth1_dns4:
+      - "192.168.0.1"
+      - "114.114.114.114"
+
+    # 写入的自定义 netplan 文件
+    custom_netplan_file: "/etc/netplan/99-zz-custom.yaml"
+
+  tasks:
+    - name: Detect systemd-networkd Network File used by eth0
+      shell: |
+        set -e
+        networkctl status {{ eth0_if }} | awk -F': ' '/Network File/ {print $2}' | xargs basename
+      args:
+        executable: /bin/bash
+      register: eth0_netfile
+      changed_when: false
+
+    - name: Fail if eth0 Network File cannot be detected
+      fail:
+        msg: "Cannot detect {{ eth0_if }} Network File from networkctl output. Is systemd-networkd managing {{ eth0_if }}?"
+      when: eth0_netfile.stdout | trim == ""
+
+    - name: Set eth0 network file basename fact
+      set_fact:
+        eth0_network_file: "{{ eth0_netfile.stdout | trim }}"
+
+    # -------------------- direct 模式 --------------------
+    - name: direct | install netplan (eth1 default route + DNS)
+      copy:
+        dest: "{{ custom_netplan_file }}"
+        mode: "0644"
+        content: |
+          network:
+            version: 2
+            ethernets:
+              {{ eth1_if }}:
+                routes:
+                  - to: default
+                    via: {{ eth1_gw4 }}
+                    metric: 50
+                nameservers:
+                  addresses: [{{ eth1_dns4 | join(', ') }}]
+      when: netplan_mode == "direct"
+      notify: apply all
+
+    - name: direct | ensure drop-in dir exists for eth0
+      file:
+        path: "/etc/systemd/network/{{ eth0_network_file }}.d"
+        state: directory
+        mode: "0755"
+      when: netplan_mode == "direct"
+      notify: apply all
+
+    - name: direct | disable DHCPv4 injecting gw/dns/routes on eth0
+      copy:
+        dest: "/etc/systemd/network/{{ eth0_network_file }}.d/override.conf"
+        mode: "0644"
+        content: |
+          [DHCPv4]
+          UseDNS=false
+          UseRoutes=false
+          UseGateway=false
+      when: netplan_mode == "direct"
+      notify: apply all
+
+    - name: direct | apply now
+      meta: flush_handlers
+      when: netplan_mode == "direct"
+
+    - name: direct | delete stale default route on eth0 (IPv4) if any
+      shell: |
+        set -eux
+        while ip -4 route show default dev {{ eth0_if }} | grep -q .; do
+          ip -4 route del default dev {{ eth0_if }}
+        done
+      args:
+        executable: /bin/bash
+      when: netplan_mode == "direct"
+
+    # -------------------- clash 模式 --------------------
+    - name: clash | remove netplan custom
+      file:
+        path: "{{ custom_netplan_file }}"
+        state: absent
+      when: netplan_mode == "clash"
+      notify: apply all
+
+    - name: clash | remove eth0 override
+      file:
+        path: "/etc/systemd/network/{{ eth0_network_file }}.d/override.conf"
+        state: absent
+      when: netplan_mode == "clash"
+      notify: apply all
+
+    - name: clash | remove eth0 drop-in dir if empty (optional)
+      file:
+        path: "/etc/systemd/network/{{ eth0_network_file }}.d"
+        state: absent
+      when: netplan_mode == "clash"
+
+    - name: clash | apply now
+      meta: flush_handlers
+      when: netplan_mode == "clash"
+
+    - name: clash | delete stale default route on eth1 (IPv4) if any
+      shell: |
+        set -eux
+        while ip -4 route show default dev {{ eth1_if }} | grep -q .; do
+          ip -4 route del default dev {{ eth1_if }}
+        done
+      args:
+        executable: /bin/bash
+      when: netplan_mode == "clash"
+
+  handlers:
+    - name: apply all
+      shell: |
+        set -eux
+        netplan apply
+        systemctl restart systemd-networkd
+        systemctl restart systemd-resolved || true
+      args:
+        executable: /bin/bash
