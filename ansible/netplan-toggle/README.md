@@ -1,140 +1,187 @@
 # netplan-toggle：在 direct / clash 两种网络模式之间切换（IPv4）
 
-这个 playbook/role 用来在「双网卡」主机上切换 IPv4 默认路由（default route）的出口：
-- **clash 模式**：默认路由走 `eth0`（通常是 Vagrant NAT / 代理网关那条链路），常用于“走 Clash 出口（US）”
-- **direct 模式**：默认路由走 `eth1`（通常是内网/物理网卡直连），常用于“直连（CN）”
+本项目使用 Ansible role 在“双网卡”主机上切换 IPv4 默认路由（default route）的出口，并提供“重启后保持模式”的纠偏机制。
 
-并且新增了“**重启后也保持模式**”的机制：开机后自动把默认路由纠偏到你选择的模式。
+- clash 模式：默认路由走 eth0（通常是 NAT/代理/Clash 网关那条链路）
+- direct 模式：默认路由走 eth1（通常是内网/物理网卡直连）
 
-> 注意：本方案主要管理 **IPv4 路由**；DNS 与 fake-ip 相关问题属于“DNS 流量是否被 Clash 接管/劫持”的范畴，见下方排错。
+> 说明：本方案主要管理“IPv4 默认路由（以及 direct 下的 DNS）”。DNS fake-ip/透明劫持这类现象，更多取决于你链路上的 Clash/网关行为。
 
 ---
 
 ## 适用环境/前提
 
-- Ubuntu/Debian 系（使用 **netplan + systemd-networkd + systemd-resolved**）
-- 目标机器不是 NetworkManager 管理（否则 `networkctl status` 可能不准确）
-- 两张网卡（示例）：
-  - `eth0`：DHCP（例如网关 `10.0.2.2`）
-  - `eth1`：直连网关（例如 `192.168.0.1`）
+- Ubuntu/Debian 系（netplan）
+- 使用 systemd-networkd 管理网卡（role 依赖 networkctl / drop-in）
+  - `systemctl is-active systemd-networkd` 需为 `active`
+- 双网卡（示例）：
+  - eth0：DHCP（NAT/代理链路）
+  - eth1：直连内网（例如网关 192.168.0.1）
 
 ---
 
-## 两种模式做了什么
+## 仓库结构
 
-### direct 模式（直连）
-目标：让 **eth1 成为默认出口**，同时阻止 eth0 的 DHCP 抢网关/路由/DNS。
+- hosts：Ansible inventory（示例组为 `[vms]`）
+- toggle-netplan.yml：入口 playbook（调用 role）
+- roles/netplan_toggle：核心逻辑
+- group_vars/vms.yml：统一配置（对 `[vms]` 组内所有主机生效）
+- host_vars/<hostname>.yml：单机覆盖（只有少数机器不同才需要）
 
-做法：
-1. 写入自定义 netplan 文件（默认：`/etc/netplan/99-zz-custom.yaml`）：
-   - 给 `eth1` 增加 **默认路由**（metric 通常较大，如 50）
-   - 给 `eth1` 配置 DNS（如 `192.168.0.1`、`114.114.114.114`）
-2. 自动识别 `eth0` 当前由哪个 `.network` 文件管理，然后写入 drop-in：
-   - `/etc/systemd/network/<eth0_network_file>.d/override.conf`
-   - 内容为禁用 DHCPv4 注入网关/路由/DNS：
-     ```ini
-     [DHCPv4]
-     UseDNS=false
-     UseRoutes=false
-     UseGateway=false
+如果仓库里存在 `netplan-toggle.yml.legacy`，那是早期“单文件 playbook”，变量名体系不同，不再推荐使用。
 
-1. `netplan apply` + 重启 `systemd-networkd`/`systemd-resolved`
-2. 运行时清理：删除可能残留在 `eth0` 上的 default route（IPv4）
+---
 
-### clash 模式
+## 统一配置
 
-目标：让 **eth0(DHCP) 成为默认出口**，并撤销 direct 模式对 eth0 的限制。
+统一变量放在：`group_vars/vms.yml`
+新增主机时，只要把主机加入 inventory 的 `[vms]` 组，一般就不需要再写 `host_vars`。
 
-做法：
+常用可配置项（均可在 group_vars/host_vars 或运行时 `-e` 覆盖）：
 
-1. 删除 `/etc/netplan/99-zz-custom.yaml`（撤销对 eth1 的额外默认路由/DNS）
-2. 删除 eth0 的 drop-in override（恢复 DHCP 默认行为）
-3. `netplan apply` + 重启 networkd/resolved
-4. 运行时清理：删除可能残留在 `eth1` 上的 default route（IPv4）
+- 模式：
+  - `netplan_toggle_mode`: `direct` / `clash`（建议运行时 `-e` 指定）
+- 网卡名：
+  - `netplan_toggle_eth0_if`
+  - `netplan_toggle_eth1_if`
+- direct 模式下 eth1 默认出口配置：
+  - `netplan_toggle_eth1_gw4`
+  - `netplan_toggle_eth1_dns4`
+  - `netplan_toggle_eth1_metric`
+- 生成/管理的文件名：
+  - `netplan_toggle_custom_netplan_file`（默认 `/etc/netplan/99-netplan-toggle.yaml`）
+  - `netplan_toggle_dropin_name`（默认 `99-netplan-toggle.conf`）
+- 切换后校验：
+  - `netplan_toggle_verify` / `netplan_toggle_assert_single_default`
+  - `netplan_toggle_verify_probe_ip` / `retries` / `delay`
 
-------
-
-## 关键增强：重启后保持模式（本次会话新增）
-
-之前的版本只用 `ip route del` 做“运行时删除”，重启后会被网络配置重新生成，导致模式回退。
-
-现在新增三件东西来保证“重启后也纠偏到目标模式”：
-
-1. 模式状态文件：
-   - `/etc/netplan_toggle/mode`
-   - 内容为 `direct` 或 `clash`
-2. 纠偏脚本：
-   - `/usr/local/sbin/netplan-toggle-enforce.sh`
-   - 开机或手动执行时读取 mode，并做：
-     - clash：确保默认路由在 `eth0`（从 DHCP lease 中取网关），并删除 `eth1` 默认路由
-     - direct：删除 `eth0` 默认路由（默认路由交给 eth1 的配置）
-3. systemd oneshot 服务：
-   - `/etc/systemd/system/netplan-toggle-enforce.service`
-   - `After=network-online.target`，保证 DHCP lease/网络准备好后再纠偏
-   - 已 `enable`，所以每次开机会自动执行一次纠偏脚本
-
-------
-
-## 主要可配置变量（示例）
-
-- `netplan_mode`: `"direct"` 或 `"clash"`
-- `eth0_if`: `"eth0"`
-- `eth1_if`: `"eth1"`
-- `eth1_gw4`: `"192.168.0.1"`
-- `eth1_dns4`: `["192.168.0.1", "114.114.114.114"]`
-- `custom_netplan_file`: `"/etc/netplan/99-zz-custom.yaml"`
-
-------
+---
 
 ## 使用方法
 
 切到 clash：
 
-```
-ansible-playbook -i inventory toggle.yml -b -e netplan_mode=clash
+```bash
+ansible-playbook -i hosts toggle-netplan.yml -b -e netplan_toggle_mode=clash
 ```
 
 切到 direct：
 
+```bash
+ansible-playbook -i hosts toggle-netplan.yml -b -e netplan_toggle_mode=direct
 ```
-ansible-playbook -i inventory toggle.yml -b -e netplan_mode=direct
+
+只操作一台（例：host1）：
+
+```bash
+ansible-playbook -i hosts toggle-netplan.yml -b -l host1 -e netplan_toggle_mode=direct
 ```
 
-> 建议在有控制台的情况下操作（或确保不会断 SSH）。因为会 `netplan apply` + 重启网络服务。
+> playbook 默认 `serial: 1`（逐台切换），降低集体断网风险。建议在有控制台的情况下操作。
 
-------
+---
 
-## 验证方式
+## 两种模式做了什么
 
-1. 只应存在 **1 条** IPv4 默认路由：
+### direct 模式（eth1 做默认出口）
 
-```
+目标：
+
+- 让 eth1 成为 IPv4 默认路由出口
+- 阻止 eth0 的 DHCP 抢默认网关/路由/DNS
+
+主要动作：
+
+1. 写入自定义 netplan 文件（默认：`/etc/netplan/99-netplan-toggle.yaml`）
+   - 给 eth1 增加默认路由：`to: default via: <netplan_toggle_eth1_gw4> metric: <netplan_toggle_eth1_metric>`
+   - 配置 eth1 DNS：`netplan_toggle_eth1_dns4`
+2. 自动识别 eth0 对应的 `.network` 文件，并写入 drop-in：
+   - `/etc/systemd/network/<eth0_network_file>.d/<netplan_toggle_dropin_name>`
+   - 禁止 DHCPv4 注入 gateway/routes/dns（UseGateway/UseRoutes/UseDNS = false）
+3. `netplan apply`
+4. 运行时清理：删除 eth0 上可能残留的 IPv4 default route
+5. 清理由 clash 模式写入的 eth1 “清空 Gateway” drop-in（如果存在）
+
+### clash 模式（eth0 做默认出口）
+
+目标：
+
+- 恢复 eth0 的 DHCP 默认行为，让 eth0 成为 IPv4 默认出口
+- 确保 eth1 不成为默认路由
+
+主要动作：
+
+1. 删除自定义 netplan 文件（撤销 direct 模式对 eth1 的默认路由/DNS）
+2. 删除 eth0 的 “禁 DHCP 注入” drop-in
+3. `netplan apply`
+4. 运行时清理：删除 eth1 上可能残留的 IPv4 default route
+5. 强化 eth0 DHCP 生效（写入 eth0 drop-in 强制 UseRoutes/UseGateway/UseDNS = yes，并重启 networkd、renew）
+6. 若 eth0 仍未生成默认路由：从 systemd lease 里读 ROUTER，fallback 添加默认路由
+7. 为 eth1 写入 drop-in 清空 Gateway（防止 eth1 变 default）
+
+---
+
+## 重启后保持模式（纠偏机制）
+
+role 会写入并启用：
+
+- 模式状态文件：`/etc/netplan_toggle/mode`（内容为 `direct` 或 `clash`）
+- 纠偏脚本：`/usr/local/sbin/netplan-toggle-enforce.sh`
+- systemd oneshot 服务：`/etc/systemd/system/netplan-toggle-enforce.service`
+
+开机后会读取 mode 并自动纠偏，确保默认路由符合目标模式。
+
+---
+
+## 验证/排查
+
+查看默认路由（建议只有 1 条）：
+
+```bash
 ip -4 route show default
-
 ip -4 route show default | wc -l
 ```
 
-1. 查看当前模式状态：
+查看当前保存的模式：
 
-```
+```bash
 cat /etc/netplan_toggle/mode
 ```
 
-1. 查看开机纠偏服务：
+查看纠偏服务状态与日志：
 
-```
+```bash
 systemctl status netplan-toggle-enforce.service --no-pager
-
 journalctl -u netplan-toggle-enforce.service -b --no-pager
 ```
 
-1. 外网出口验证（示例）：
+验证某个目的地址实际走哪张网卡：
 
+```bash
+ip -4 route get 1.1.1.1
 ```
+
+验证ip
+
+``````
 curl -4 -s https://ipinfo.io/country; echo
-```
+``````
 
-------
+---
+
+## 新增主机怎么做？
+
+1. 把主机加到 `hosts` 的 `[vms]` 组
+2. 直接运行 playbook（会自动继承 `group_vars/vms.yml`）
+
+只有当某台主机参数不同（接口名/网关/DNS/metric 等）时，才需要单独写：
+
+`host_vars/<hostname>.yml`（覆盖差异项即可），例如：
+
+```yaml
+netplan_toggle_eth0_if: "ens160"
+netplan_toggle_eth1_if: "ens192"
+```
 
 ## DNS / fake-ip 说明（常见疑问）
 
@@ -147,7 +194,6 @@ curl -4 -s https://ipinfo.io/country; echo
 快速定位（可选）：
 
 ```
-
 ip -4 route get 198.18.0.34
 
 dig @8.8.8.8 baidu.com A +short

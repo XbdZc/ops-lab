@@ -1,0 +1,108 @@
+pipeline {
+    // agent any：让 Jenkins 在任意可用执行节点上跑这条流水线
+    // 你当前环境里，实际就是在 host3 的 Jenkins 节点上执行
+    agent any
+
+    environment {
+        // Harbor 里 Tomcat 镜像的完整仓库名
+        // 后续 build / push / pull 都围绕这个名字走
+        IMAGE_REPO = 'harbor.host3/ruoyi/ry-tomcat'
+
+        // 本次镜像 tag，直接复用 Jenkins 自带的 BUILD_NUMBER
+        // 例如第 15 次构建，对应 tag 就是 15
+        IMAGE_TAG  = "${BUILD_NUMBER}"
+
+        // Docker build 的上下文目录
+        // 这里要求 Jenkins 工作区下已经有 tomcat9/ 目录
+        // 例如：/var/lib/jenkins/workspace/host1-build-harbor/tomcat9
+        BUILD_CTX  = "${WORKSPACE}/tomcat9"
+    }
+
+    stages {
+
+        stage('Build And Push On host3') {
+            steps {
+                // 从 Jenkins Credentials 里取 Harbor 用户名密码
+                // credentialsId 要和你在 Jenkins 里建的凭据 ID 一致
+                withCredentials([usernamePassword(
+                    credentialsId: 'harbor-creds',
+                    usernameVariable: 'HARBOR_USER',
+                    passwordVariable: 'HARBOR_PASS'
+                )]) {
+                    sh '''
+                    set -e
+                    # set -e：任意命令失败立即退出，避免“前面失败了，后面还继续跑”
+
+                    # 先检查 Dockerfile 是否存在
+                    # 如果构建上下文没同步到 Jenkins 工作区，这里会直接失败
+                    test -f "${BUILD_CTX}/Dockerfile"
+
+                    # 用 Jenkins 凭据非交互登录 Harbor
+                    # --password-stdin：避免把密码直接写在命令行里
+                    printf '%s' "$HARBOR_PASS" | docker login harbor.host3 -u "$HARBOR_USER" --password-stdin
+
+                    # 在 host3 本机构建镜像
+                    # 最终镜像名示例：harbor.host3/ruoyi/ry-tomcat:15
+                    docker build -t ${IMAGE_REPO}:${IMAGE_TAG} "${BUILD_CTX}"
+
+                    # 推送到 Harbor
+                    docker push ${IMAGE_REPO}:${IMAGE_TAG}
+                    '''
+                }
+            }
+        }
+
+        stage('Pull And Deploy On host1') {
+            steps {
+                sh '''
+                # 通过 SSH 到 host1 执行部署动作
+                # deploy 用户负责写 .env
+                # sudo 只用于 docker/systemctl 这些你已放行的命令
+                ssh deploy@192.168.0.221 "set -e; \
+                printf 'TAG=%s\n' '${IMAGE_TAG}' > /opt/ry-stack/.env; \
+                cat /opt/ry-stack/.env; \
+                cd /opt/ry-stack; \
+                sudo /usr/bin/docker compose config --environment | grep '^TAG='; \
+                sudo /usr/bin/docker pull ${IMAGE_REPO}:${IMAGE_TAG}; \
+                sudo /usr/bin/systemctl restart ry-stack"
+                '''
+            }
+        }
+
+        stage('Check Entry') {
+            steps {
+                sh '''
+                # 入口验收：避免“restart 成功 ≠ 业务 ready”
+                # 这里对 https://app.host2/login 做最多 10 次探测
+                # 200 或 302 都视为通过
+                ok=0
+                for i in 1 2 3 4 5 6 7 8 9 10; do
+                  code="$(curl -kI -s -o /dev/null -w "%{http_code}" https://app.host2/login)"
+                  echo "try=$i code=$code"
+
+                  if [ "$code" = "200" ] || [ "$code" = "302" ]; then
+                    ok=1
+                    break
+                  fi
+
+                  sleep 2
+                done
+
+                # 最终如果 ok 不是 1，stage 失败，流水线终止
+                [ "$ok" = "1" ]
+                '''
+            }
+        }
+
+        stage('Verify Version In Container') {
+            steps {
+                sh '''
+                # 最终验收：
+                # 1）看 host1 当前生效的 TAG
+                # 2）进容器读取 BUILD_INFO.txt，确认容器里确实是目标版本
+                ssh deploy@192.168.0.221 "cat /opt/ry-stack/.env && sudo /usr/bin/docker exec ry-tomcat sh -c 'cat /opt/tomcat/webapps/ROOT/BUILD_INFO.txt'"
+                '''
+            }
+        }
+    }
+}
