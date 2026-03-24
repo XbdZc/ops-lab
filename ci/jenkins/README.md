@@ -1,4 +1,4 @@
-# Jenkins + Harbor + host1 部署链
+# Jenkins + Harbor 部署链
 
 ## 1. 简介
 

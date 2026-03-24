@@ -3,6 +3,8 @@
 个人运维实验项目仓库。
 
 ## 目录
+- ci/jenkins
+  - Jenkins + Harbor 部署链
 - monitoring/prometheus-grafana-alertmanager
   - Prometheus + Grafana + Alertmanager + Nginx HTTPS 监控闭环实验
 - ansible/dockerinstall 
@@ -15,3 +17,8 @@
     - 可选配置 DNS
     - 可选配置 Swap
     - 可选配置 SSH（root 登录 / 密码认证）
+- ansible/netplan-toggle
+  - 本项目使用 Ansible role 在“双网卡”主机上切换 IPv4 默认路由（default route）的出口，并提供“重启后保持模式”的纠偏机制。
+
+    - proxy 模式：默认路由走 eth0（通常是 NAT/代理/proxy 网关那条链路）
+    - direct 模式：默认路由走 eth1（通常是内网/物理网卡直连）

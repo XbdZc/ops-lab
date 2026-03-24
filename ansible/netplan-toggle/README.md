@@ -1,11 +1,11 @@
-# netplan-toggle：在 direct / clash 两种网络模式之间切换（IPv4）
+# netplan-toggle：在 direct / proxy 两种网络模式之间切换（IPv4）
 
 本项目使用 Ansible role 在“双网卡”主机上切换 IPv4 默认路由（default route）的出口，并提供“重启后保持模式”的纠偏机制。
 
-- clash 模式：默认路由走 eth0（通常是 NAT/代理/Clash 网关那条链路）
+- proxy 模式：默认路由走 eth0（通常是 NAT/代理/proxy 网关那条链路）
 - direct 模式：默认路由走 eth1（通常是内网/物理网卡直连）
 
-> 说明：本方案主要管理“IPv4 默认路由（以及 direct 下的 DNS）”。DNS fake-ip/透明劫持这类现象，更多取决于你链路上的 Clash/网关行为。
+> 说明：本方案主要管理“IPv4 默认路由（以及 direct 下的 DNS）”。DNS fake-ip/透明劫持这类现象，更多取决于你链路上的 proxy/网关行为。
 
 ---
 
@@ -40,7 +40,7 @@
 常用可配置项（均可在 group_vars/host_vars 或运行时 `-e` 覆盖）：
 
 - 模式：
-  - `netplan_toggle_mode`: `direct` / `clash`（建议运行时 `-e` 指定）
+  - `netplan_toggle_mode`: `direct` / `proxy`（建议运行时 `-e` 指定）
 - 网卡名：
   - `netplan_toggle_eth0_if`
   - `netplan_toggle_eth1_if`
@@ -59,10 +59,10 @@
 
 ## 使用方法
 
-切到 clash：
+切到 proxy：
 
 ```bash
-ansible-playbook -i hosts toggle-netplan.yml -b -e netplan_toggle_mode=clash
+ansible-playbook -i hosts toggle-netplan.yml -b -e netplan_toggle_mode=proxy
 ```
 
 切到 direct：
@@ -100,9 +100,9 @@ ansible-playbook -i hosts toggle-netplan.yml -b -l host1 -e netplan_toggle_mode=
    - 禁止 DHCPv4 注入 gateway/routes/dns（UseGateway/UseRoutes/UseDNS = false）
 3. `netplan apply`
 4. 运行时清理：删除 eth0 上可能残留的 IPv4 default route
-5. 清理由 clash 模式写入的 eth1 “清空 Gateway” drop-in（如果存在）
+5. 清理由 proxy 模式写入的 eth1 “清空 Gateway” drop-in（如果存在）
 
-### clash 模式（eth0 做默认出口）
+### proxy 模式（eth0 做默认出口）
 
 目标：
 
@@ -125,7 +125,7 @@ ansible-playbook -i hosts toggle-netplan.yml -b -l host1 -e netplan_toggle_mode=
 
 role 会写入并启用：
 
-- 模式状态文件：`/etc/netplan_toggle/mode`（内容为 `direct` 或 `clash`）
+- 模式状态文件：`/etc/netplan_toggle/mode`（内容为 `direct` 或 `proxy`）
 - 纠偏脚本：`/usr/local/sbin/netplan-toggle-enforce.sh`
 - systemd oneshot 服务：`/etc/systemd/system/netplan-toggle-enforce.service`
 
@@ -185,10 +185,10 @@ netplan_toggle_eth1_if: "ens192"
 
 ## DNS / fake-ip 说明（常见疑问）
 
-- `ping baidu.com` 得到 `198.18.x.x`，基本可以判定：**DNS 回答来自 Clash 的 fake-ip 引擎（或透明 DNS 劫持）**
+- `ping baidu.com` 得到 `198.18.x.x`，基本可以判定：**DNS 回答来自 proxy 的 fake-ip 引擎（或透明 DNS 劫持）**
 - 这件事不一定会体现在 `/etc/resolv.conf` 上，因为有些实现是“透明劫持 53 端口”，你看起来 nameserver 没变，但流量被重定向了。
-- direct/clash 模式本方案主要切的是“默认路由出口”，所以会出现：
-  - 走 eth0 的时候更容易触发 fake-ip（如果 eth0 路径上有 DNS 劫持/Clash 网关）
+- direct/proxy 模式本方案主要切的是“默认路由出口”，所以会出现：
+  - 走 eth0 的时候更容易触发 fake-ip（如果 eth0 路径上有 DNS 劫持/proxy 网关）
   - 走 eth1 时解析回真实 IP
 
 快速定位（可选）：
