@@ -91,7 +91,7 @@
       ETH0="{{ netplan_toggle_eth0_if }}"
       ETH1="{{ netplan_toggle_eth1_if | default('eth1') }}"
 
-      if [[ "$MODE" == "clash" ]]; then
+      if [[ "$MODE" == "proxy" ]]; then
         while ip -4 route del default dev "$ETH1" 2>/dev/null; do :; done
 
         gw=""
@@ -124,7 +124,7 @@
     mode: "0644"
     content: |
       [Unit]
-      Description=Netplan toggle enforce default route (direct/clash)
+      Description=Netplan toggle enforce default route (direct/proxy)
       After=systemd-networkd.service network-online.target
       Wants=network-online.target
 

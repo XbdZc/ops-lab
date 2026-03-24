@@ -12,10 +12,10 @@
   when: netplan_toggle_mode == "direct"
   tags: [netplan_toggle, direct]
 
-- name: Apply clash mode
-  ansible.builtin.import_tasks: clash.yml
-  when: netplan_toggle_mode == "clash"
-  tags: [netplan_toggle, clash]
+- name: Apply proxy mode
+  ansible.builtin.import_tasks: proxy.yml
+  when: netplan_toggle_mode == "proxy"
+  tags: [netplan_toggle, proxy]
 
 - name: Verify
   ansible.builtin.import_tasks: verify.yml

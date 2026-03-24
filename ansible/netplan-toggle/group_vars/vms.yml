@@ -3,8 +3,8 @@
 # 新增主机时只要加入 [vms]，通常无需再建 host_vars/<host>.yml
 # 若某台机器参数不同，再在 host_vars/<host>.yml 覆盖即可。
 
-# 当前模式（建议运行时用 -e netplan_toggle_mode=direct|clash 覆盖）
-netplan_toggle_mode: "clash"
+# 当前模式（建议运行时用 -e netplan_toggle_mode=direct|proxy 覆盖）
+netplan_toggle_mode: "proxy"
 
 # 接口名
 netplan_toggle_eth0_if: "eth0"

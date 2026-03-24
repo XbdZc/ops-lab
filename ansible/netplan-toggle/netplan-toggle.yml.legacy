@@ -1,9 +1,9 @@
 ---
-- name: Toggle direct vs clash mode (IPv4 only)
+- name: Toggle direct vs proxy mode (IPv4 only)
   hosts: all
   become: true
   vars:
-    netplan_mode: "direct"         # direct 或 clash
+    netplan_mode: "direct"         # direct 或 proxy
     eth0_if: "eth0"
     eth1_if: "eth1"
 
@@ -88,32 +88,32 @@
         executable: /bin/bash
       when: netplan_mode == "direct"
 
-    # -------------------- clash 模式 --------------------
-    - name: clash | remove netplan custom
+    # -------------------- proxy 模式 --------------------
+    - name: proxy | remove netplan custom
       file:
         path: "{{ custom_netplan_file }}"
         state: absent
-      when: netplan_mode == "clash"
+      when: netplan_mode == "proxy"
       notify: apply all
 
-    - name: clash | remove eth0 override
+    - name: proxy | remove eth0 override
       file:
         path: "/etc/systemd/network/{{ eth0_network_file }}.d/override.conf"
         state: absent
-      when: netplan_mode == "clash"
+      when: netplan_mode == "proxy"
       notify: apply all
 
-    - name: clash | remove eth0 drop-in dir if empty (optional)
+    - name: proxy | remove eth0 drop-in dir if empty (optional)
       file:
         path: "/etc/systemd/network/{{ eth0_network_file }}.d"
         state: absent
-      when: netplan_mode == "clash"
+      when: netplan_mode == "proxy"
 
-    - name: clash | apply now
+    - name: proxy | apply now
       meta: flush_handlers
-      when: netplan_mode == "clash"
+      when: netplan_mode == "proxy"
 
-    - name: clash | delete stale default route on eth1 (IPv4) if any
+    - name: proxy | delete stale default route on eth1 (IPv4) if any
       shell: |
         set -eux
         while ip -4 route show default dev {{ eth1_if }} | grep -q .; do
@@ -121,7 +121,7 @@
         done
       args:
         executable: /bin/bash
-      when: netplan_mode == "clash"
+      when: netplan_mode == "proxy"
 
   handlers:
     - name: apply all

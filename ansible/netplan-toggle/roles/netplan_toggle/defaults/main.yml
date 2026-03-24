@@ -1,6 +1,6 @@
 ---
-# direct 或 clash
-netplan_toggle_mode: "clash"
+# direct 或 proxy
+netplan_toggle_mode: "proxy"
 
 # 接口名（按需在 host_vars 里覆盖）
 netplan_toggle_eth0_if: "eth0"

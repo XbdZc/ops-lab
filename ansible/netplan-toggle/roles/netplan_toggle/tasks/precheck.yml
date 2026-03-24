@@ -2,8 +2,8 @@
 - name: Validate netplan_toggle_mode
   ansible.builtin.assert:
     that:
-      - netplan_toggle_mode in ["direct", "clash"]
-    fail_msg: "netplan_toggle_mode must be 'direct' or 'clash'"
+      - netplan_toggle_mode in ["direct", "proxy"]
+    fail_msg: "netplan_toggle_mode must be 'direct' or 'proxy'"
 
 - name: direct | validate required vars
   ansible.builtin.assert:

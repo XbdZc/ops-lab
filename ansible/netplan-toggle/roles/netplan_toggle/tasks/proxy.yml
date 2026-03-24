@@ -1,26 +1,26 @@
 ---
-- name: clash | remove netplan custom
+- name: proxy | remove netplan custom
   ansible.builtin.file:
     path: "{{ netplan_toggle_custom_netplan_file }}"
     state: absent
   notify: "netplan apply"
 
-- name: clash | remove networkd drop-in (eth0)
+- name: proxy | remove networkd drop-in (eth0)
   ansible.builtin.file:
     path: "{{ netplan_toggle__eth0_dropin_file }}"
     state: absent
   notify: "netplan apply"
 
-- name: clash | apply now
+- name: proxy | apply now
   ansible.builtin.meta: flush_handlers
 
-- name: clash | check IPv4 default routes on eth1
+- name: proxy | check IPv4 default routes on eth1
   ansible.builtin.command: ip -4 route show default dev {{ netplan_toggle_eth1_if }}
   register: _eth1_default_routes
   changed_when: false
   failed_when: false
 
-- name: clash | delete stale IPv4 default route(s) on eth1
+- name: proxy | delete stale IPv4 default route(s) on eth1
   ansible.builtin.shell: |
     set -euo pipefail
     for i in $(seq 1 10); do
@@ -39,16 +39,16 @@
   changed_when: true
 
 # ---- appended: force-enable DHCP routes and fallback-add IPv4 default route on eth0 ----
-- name: clash | apply now (ensure netplan changes already applied)
+- name: proxy | apply now (ensure netplan changes already applied)
   ansible.builtin.meta: flush_handlers
 
-- name: clash | ensure drop-in dir exists (eth0)
+- name: proxy | ensure drop-in dir exists (eth0)
   ansible.builtin.file:
     path: "{{ netplan_toggle__eth0_dropin_dir }}"
     state: directory
     mode: "0755"
 
-- name: clash | install networkd drop-in to ENABLE DHCP routes/dns on eth0
+- name: proxy | install networkd drop-in to ENABLE DHCP routes/dns on eth0
   ansible.builtin.copy:
     dest: "{{ netplan_toggle__eth0_dropin_file }}"
     mode: "0644"
@@ -63,25 +63,25 @@
       UseGateway=yes
       UseDNS=yes
 
-- name: clash | restart systemd-networkd to reload drop-in
+- name: proxy | restart systemd-networkd to reload drop-in
   ansible.builtin.command: systemctl restart systemd-networkd
 
-- name: clash | reconfigure eth0 (ignore errors)
+- name: proxy | reconfigure eth0 (ignore errors)
   ansible.builtin.command: "networkctl reconfigure {{ netplan_toggle_eth0_if }}"
   changed_when: false
   failed_when: false
 
-- name: clash | renew eth0 DHCP (ignore if unsupported)
+- name: proxy | renew eth0 DHCP (ignore if unsupported)
   ansible.builtin.command: "networkctl renew {{ netplan_toggle_eth0_if }}"
   changed_when: false
   failed_when: false
 
-- name: clash | check IPv4 default route on eth0
+- name: proxy | check IPv4 default route on eth0
   ansible.builtin.command: "ip -4 route show default dev {{ netplan_toggle_eth0_if }}"
   register: _eth0_def
   changed_when: false
 
-- name: clash | read DHCP ROUTER from systemd lease (eth0)
+- name: proxy | read DHCP ROUTER from systemd lease (eth0)
   ansible.builtin.shell: |
     set -e
     IF="{{ netplan_toggle_eth0_if }}"
@@ -92,7 +92,7 @@
   changed_when: false
   when: _eth0_def.stdout | trim == ""
 
-- name: clash | install fallback IPv4 default route on eth0 (workaround)
+- name: proxy | install fallback IPv4 default route on eth0 (workaround)
   ansible.builtin.command: >
     ip -4 route replace default via {{ _eth0_router.stdout | trim }}
     dev {{ netplan_toggle_eth0_if }} metric 10
@@ -100,14 +100,14 @@
     - _eth0_def.stdout | trim == ""
     - (_eth0_router.stdout | default('') | trim) != ""
 
-- name: clash | verify IPv4 default route on eth0
+- name: proxy | verify IPv4 default route on eth0
   ansible.builtin.command: "ip -4 route show default dev {{ netplan_toggle_eth0_if }}"
   register: _eth0_def2
   changed_when: false
   failed_when: _eth0_def2.stdout | trim == ""
 
-# ---- appended: prevent eth1 from being a default route in clash mode ----
-- name: clash | detect eth1 Network File path
+# ---- appended: prevent eth1 from being a default route in proxy mode ----
+- name: proxy | detect eth1 Network File path
   ansible.builtin.shell: |
     set -e
     IF="{{ netplan_toggle_eth1_if | default('eth1') }}"
@@ -115,14 +115,14 @@
   register: _eth1_netfile
   changed_when: false
 
-- name: clash | ensure drop-in dir exists (eth1)
+- name: proxy | ensure drop-in dir exists (eth1)
   ansible.builtin.file:
     path: "{{ _eth1_netfile.stdout | trim }}.d"
     state: directory
     mode: "0755"
   when: (_eth1_netfile.stdout | default('') | trim) != ""
 
-- name: clash | install networkd drop-in to CLEAR Gateway on eth1 (no IPv4 default)
+- name: proxy | install networkd drop-in to CLEAR Gateway on eth1 (no IPv4 default)
   ansible.builtin.copy:
     dest: "{{ _eth1_netfile.stdout | trim }}.d/10-netplan_toggle-no-default-gw.conf"
     mode: "0644"
@@ -131,12 +131,12 @@
       Gateway=
   when: (_eth1_netfile.stdout | default('') | trim) != ""
 
-- name: clash | reconfigure eth1 to apply drop-in (ignore errors)
+- name: proxy | reconfigure eth1 to apply drop-in (ignore errors)
   ansible.builtin.command: "networkctl reconfigure {{ netplan_toggle_eth1_if | default('eth1') }}"
   changed_when: false
   failed_when: false
 
-- name: clash | delete stale IPv4 default route(s) on eth1 (final cleanup)
+- name: proxy | delete stale IPv4 default route(s) on eth1 (final cleanup)
   ansible.builtin.shell: |
     set -e
     IF="{{ netplan_toggle_eth1_if | default('eth1') }}"
@@ -167,7 +167,7 @@
       ETH0="{{ netplan_toggle_eth0_if }}"
       ETH1="{{ netplan_toggle_eth1_if | default('eth1') }}"
 
-      if [[ "$MODE" == "clash" ]]; then
+      if [[ "$MODE" == "proxy" ]]; then
         # 1) always remove eth1 default
         while ip -4 route del default dev "$ETH1" 2>/dev/null; do :; done
 
@@ -204,7 +204,7 @@
     mode: "0644"
     content: |
       [Unit]
-      Description=Netplan toggle enforce default route (direct/clash)
+      Description=Netplan toggle enforce default route (direct/proxy)
       After=systemd-networkd.service network-online.target
       Wants=network-online.target
 
@@ -216,11 +216,11 @@
       [Install]
       WantedBy=multi-user.target
 
-- name: persist | set mode file (clash)
+- name: persist | set mode file (proxy)
   ansible.builtin.copy:
     dest: /etc/netplan_toggle/mode
     mode: "0644"
-    content: "clash\n"
+    content: "proxy\n"
 
 - name: persist | daemon-reload
   ansible.builtin.command: systemctl daemon-reload

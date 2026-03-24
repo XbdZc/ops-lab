@@ -1,5 +1,5 @@
 ---
-- name: Toggle IPv4 routing mode (direct/clash)
+- name: Toggle IPv4 routing mode (direct/proxy)
   hosts: vms
   become: true
   serial: 1
